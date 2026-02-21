@@ -1,0 +1,59 @@
+const express = require("express");
+const app = express();
+const http = require("http").createServer(app);
+const io = require("socket.io")(http);
+
+app.use(express.static(__dirname));
+
+let players = [];
+let roles = {};
+let phase = "night"; 
+let mafiaCount = 1;
+
+io.on("connection", (socket) => {
+  console.log("Player connected:", socket.id);
+
+  socket.on("joinLobby", (name) => {
+    players.push({id: socket.id, name, alive:true});
+    io.emit("updatePlayers", players);
+  });
+
+  socket.on("startGame", (mafiaNum) => {
+    mafiaCount = mafiaNum;
+    assignRoles();
+    io.emit("gameStart", {players, roles, phase});
+  });
+
+  socket.on("nightAction", (data) => {
+    io.emit("nightActionResult", data);
+  });
+
+  socket.on("vote", (targetId) => {
+    io.emit("voteResult", targetId);
+  });
+
+  socket.on("nextPhase", () => {
+    phase = phase==="night"?"day":"night";
+    io.emit("phaseChange", phase);
+  });
+
+  socket.on("disconnect", () => {
+    players = players.filter(p=>p.id!==socket.id);
+    io.emit("updatePlayers", players);
+  });
+});
+
+function assignRoles(){
+  let temp = [...players];
+  roles = {};
+  temp.forEach(p=>roles[p.id]="Citizen");
+  for(let i=0;i<mafiaCount;i++){
+    let idx = Math.floor(Math.random()*temp.length);
+    roles[temp[idx].id]="Mafia";
+    temp.splice(idx,1);
+  }
+  if(temp.length>0) roles[temp[0].id]="Police";
+  if(temp.length>1) roles[temp[1].id]="Medic";
+}
+
+http.listen(3000, ()=>console.log("Server running on http://localhost:3000"));
